@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inventory Optimization</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Fraunces:opsz,wght@9..144,600&display=swap">
+<style>
+:root{--bg:#eef2f6;--panel:#fff;--ink:#1b2a3a;--mute:#5d6b7a;--line:#d8e0e8;--accent:#3d4fd1;--risk:#d9363e;--warn:#d98a1c;--ok:#1f8f7e}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "IBM Plex Sans",system-ui,sans-serif}
+h1,h2{font-family:Fraunces,Georgia,serif;font-weight:600;margin:0}
+header{padding:28px 24px 8px;max-width:1200px;margin:auto}
+h1{font-size:30px}
+header p{color:var(--mute);margin:6px 0 0;max-width:72ch}
+main{max-width:1200px;margin:auto;padding:16px 24px 48px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+.kpi b{display:block;font-size:26px;font-weight:600}
+.kpi span{color:var(--mute);font-size:13px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px}
+.grid{display:grid;grid-template-columns:1.5fr 1fr;gap:16px;align-items:start}
+h2{font-size:19px;margin-bottom:8px}
+.sm{color:var(--mute);font-size:13px}
+.ctl{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+select{font:inherit;padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.chips button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 12px;font:inherit;font-size:13px;cursor:pointer;color:var(--ink)}
+.chips button[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:#fff}
+.tbl{overflow-x:auto;max-height:640px;overflow-y:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;font-weight:500;color:var(--mute);padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap;position:sticky;top:0;background:#fff}
+td{padding:8px;border-bottom:1px solid var(--line);white-space:nowrap}
+tr.row{cursor:pointer}
+tr.row:hover,tr.row:focus{background:#f3f6fb;outline:none}
+tr.row[aria-selected=true]{background:#e8ecfb}
+.pill{display:inline-block;padding:1px 10px;border-radius:999px;font-size:12px;font-weight:500}
+.p-up{background:#e1f4f0;color:#13665a}.p-hold{background:#fdf1dc;color:#8a5608}.p-down{background:#fbe4e5;color:#992027}.p-info{background:#e8ecfb;color:#2a3799}
+.st{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
+.st div{background:#f6f8fb;border:1px solid var(--line);border-radius:6px;padding:6px 10px}
+.st b{display:block;font-size:17px}
+.act{border-left:4px solid var(--accent);background:#eef0fc;padding:10px 12px;border-radius:0 6px 6px 0;margin:10px 0}
+.act.r{border-color:var(--risk);background:#fbeced}.act.o{border-color:var(--warn);background:#fdf6e9}.act.g{border-color:var(--ok);background:#eef8f6}
+svg{width:100%;height:auto;display:block;margin:4px 0}
+.leg{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--mute);margin-bottom:8px}
+.leg span:before{content:"";display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px;background:var(--c)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media(max-width:900px){.kpis{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Inventory Optimization</h1>
+  <p>Synthetic demo. Forecasts demand with seasonality, then uses each product's supplier lead time to flag items about to stock out, items to reorder, and items with too much stock, and says what to do for each.</p>
+</header>
+<main>
+  <section class="kpis" aria-label="Summary">
+    <div class="kpi"><b id="k1"></b><span>Products at stockout risk</span></div>
+    <div class="kpi"><b id="k2"></b><span>Margin at risk from stockouts</span></div>
+    <div class="kpi"><b id="k3"></b><span>Cash tied up in excess stock</span></div>
+    <div class="kpi"><b id="k4"></b><span>Cash needed for recommended orders</span></div>
+  </section>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Inventory decisions</h2>
+      <div class="ctl"><label for="sl">Target service level</label>
+        <select id="sl"><option value="1.28">90%</option><option value="1.645" selected>95%</option><option value="1.88">97%</option><option value="2.33">99%</option></select>
+        <span class="sm">Higher service level means more safety stock.</span></div>
+      <div class="chips" id="chips" role="group" aria-label="Filter by status"></div>
+      <div class="tbl"><table>
+        <thead><tr><th>Product</th><th>On hand</th><th>Weeks of cover</th><th>Lead time</th><th>Reorder point</th><th>Status</th><th>Action</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table></div>
+    </section>
+    <aside class="card" id="detail" aria-live="polite"></aside>
+  </div>
+
+  <section class="card" style="margin-top:16px">
+    <h2>How the recommendations are made</h2>
+    <p class="sm" style="margin:0">Forecast demand = average weekly demand x the season's index for that product category. Safety stock = z x sqrt(lead time x demand variance + demand squared x lead-time variance). Reorder point = demand during lead time + safety stock. If stock plus orders in transit is below the reorder point, it is time to order, up to the reorder point plus 4 weeks of demand. Over 12 weeks of cover counts as overstock. In production, a time-series model (for example Prophet or gradient boosting) would replace the simple seasonal index, and real sales, stock and supplier data would replace the simulated numbers.</p>
+  </section>
+</main>
+
+<script>
+// ---------- Synthetic data ----------
+let sd = 11; const rnd = () => (sd = (sd * 1664525 + 1013904223) % 4294967296) / 4294967296;
+const SEAS = {
+  Winter:[1.5,1.3,.9,.6,.5,.4,.4,.5,.8,1.2,1.6,1.8],
+  Summer:[.5,.6,.9,1.3,1.6,1.7,1.7,1.5,1.1,.7,.5,.4],
+  Toys:[.6,.6,.7,.7,.8,.8,.8,.9,1,1.3,1.8,2],
+  Electronics:[.9,.8,.8,.8,.9,.9,.9,1,1,1.1,1.5,1.5],
+  Home:[1,1,1.05,1.05,1,.95,.9,.95,1,1.05,1.1,1.1],
+  Grocery:[1,1,1,1,1,1,1,1,1,1.05,1.1,1.15]
+};
+// name, category, base weekly demand, demand variability (cv), lead time weeks, lead time sd, unit cost, price, stock profile (h=low, n=normal, s=high)
+const DEFS = [
+ ["Down jacket","Winter",90,.35,5,1,38,95,"h"],["Wool sweater","Winter",70,.3,4,1,22,60,"n"],["Thermal gloves","Winter",120,.3,3,.5,6,18,"h"],["Space heater","Winter",45,.4,6,1.5,28,70,"n"],
+ ["Camping tent","Summer",35,.4,6,1,55,130,"s"],["Sunscreen SPF50","Summer",150,.25,2,.5,4,12,"s"],["Cooler box","Summer",40,.35,5,1,18,45,"s"],["Beach umbrella","Summer",30,.4,5,1,12,32,"s"],
+ ["Building blocks set","Toys",80,.35,5,1,16,45,"h"],["Remote control car","Toys",55,.4,6,1.5,20,55,"h"],["Board game","Toys",60,.3,4,.5,9,26,"n"],
+ ["Wireless earbuds","Electronics",110,.35,6,1.5,24,70,"h"],["Smart watch","Electronics",50,.4,7,1.5,48,130,"n"],["Phone charger","Electronics",200,.2,3,.5,3,12,"n"],["Bluetooth speaker","Electronics",60,.35,5,1,22,60,"s"],["Tablet case","Electronics",70,.3,4,1,5,18,"s"],
+ ["LED desk lamp","Home",65,.25,4,.5,9,28,"n"],["Bedsheet set","Home",55,.25,4,1,14,40,"n"],["Air fryer","Home",40,.4,6,1,38,95,"h"],["Water bottle","Home",130,.2,3,.5,3,11,"s"],
+ ["Olive oil 1L","Grocery",160,.2,2,.5,6,12,"n"],["Basmati rice 5kg","Grocery",220,.15,2,.5,7,13,"n"],["Protein bars (box)","Grocery",90,.25,3,.5,10,22,"s"],["Instant coffee","Grocery",140,.2,2,.5,5,11,"n"]
+];
+const start = new Date(2026, 9, 26);
+const mo = k => new Date(start.getTime() + k * 7 * 86400000).getMonth();
+const data = DEFS.map(([name, cat, base, cv, L, Lsd, cost, price, prof]) => {
+  const fc = Array.from({length: 8}, (_, i) => +(base * SEAS[cat][mo(i)]).toFixed(1));
+  const act = Array.from({length: 12}, (_, j) => Math.round(base * SEAS[cat][mo(-(12 - j))] * (1 + (rnd() - .5) * 2 * cv * .8)));
+  const Lw = Math.ceil(L), d = fc.slice(0, Lw).reduce((a, b) => a + b, 0) / Lw;
+  let hand, ord;
+  if (prof === "h") { hand = d * L * (.25 + rnd() * .35); ord = d * L * rnd() * .25; }
+  else if (prof === "n") { hand = d * L * (.9 + rnd() * .5); ord = d * L * rnd() * .3; }
+  else { hand = d * (14 + rnd() * 12); ord = d * rnd() * 3; }
+  return {name, cat, cv, L, Lsd, cost, price, fc, act, hand: Math.round(hand), ord: Math.round(ord)};
+});
+
+function calc(c, z) {
+  const Lw = Math.ceil(c.L), d = c.fc.slice(0, Lw).reduce((a, b) => a + b, 0) / Lw, s = c.cv * d;
+  const ss = z * Math.sqrt(c.L * s * s + d * d * c.Lsd * c.Lsd), rop = d * c.L + ss, pos = c.hand + c.ord, max = rop + 4 * d;
+  let st;
+  if (pos < rop) st = pos < d * c.L ? "Stockout risk" : "Reorder"; else st = pos / d > 12 ? "Overstock" : "Healthy";
+  const need = st === "Stockout risk" || st === "Reorder";
+  const short = Math.max(0, d * c.L - pos);
+  return {Lw, d, ss, rop, pos, max, st, qty: need ? Math.ceil(max - pos) : 0, risk: short * (c.price - c.cost), excess: st === "Overstock" ? Math.floor(pos - max) : 0, cover: c.hand / d};
+}
+
+// ---------- Rendering ----------
+const $ = id => document.getElementById(id);
+const money = v => "$" + Math.round(v).toLocaleString();
+const PILL = {"Stockout risk": "p-down", "Reorder": "p-hold", "Healthy": "p-up", "Overstock": "p-info"};
+const RANK = {"Stockout risk": 0, "Reorder": 1, "Overstock": 2, "Healthy": 3};
+let z = 1.645, flt = "All", sel = null, res = [];
+
+function action(c, r) {
+  if (r.st === "Stockout risk") return `Order ${r.qty} now and expedite`;
+  if (r.st === "Reorder") return `Order ${r.qty} this week`;
+  if (r.st === "Overstock") return `Pause reorders, clear ~${r.excess}`;
+  return "No action";
+}
+function run() {
+  res = data.map(c => ({c, r: calc(c, z)}));
+  res.sort((a, b) => RANK[a.r.st] - RANK[b.r.st] || (b.r.risk + b.r.excess * b.c.cost) - (a.r.risk + a.r.excess * a.c.cost));
+  if (!sel) sel = res[0].c;
+  $("k1").textContent = res.filter(x => x.r.st === "Stockout risk").length;
+  $("k2").textContent = money(res.reduce((t, x) => t + x.r.risk, 0));
+  $("k3").textContent = money(res.reduce((t, x) => t + x.r.excess * x.c.cost, 0));
+  $("k4").textContent = money(res.reduce((t, x) => t + x.r.qty * x.c.cost, 0));
+  chips(); rows(); detail();
+}
+function chips() {
+  const opts = ["All", "Stockout risk", "Reorder", "Overstock", "Healthy"];
+  $("chips").innerHTML = opts.map(k => `<button aria-pressed="${k === flt}" data-k="${k}">${k} (${k === "All" ? res.length : res.filter(x => x.r.st === k).length})</button>`).join("");
+}
+function rows() {
+  $("rows").innerHTML = res.filter(x => flt === "All" || x.r.st === flt).map(({c, r}) => `<tr class="row" tabindex="0" data-n="${c.name}" aria-selected="${c === sel}">
+    <td>${c.name} <span class="sm">${c.cat}</span></td><td>${c.hand}</td><td>${r.cover.toFixed(1)}</td><td>${c.L} wk</td><td>${Math.round(r.rop)}</td>
+    <td><span class="pill ${PILL[r.st]}">${r.st}</span></td><td>${action(c, r)}</td></tr>`).join("");
+}
+function barsSvg(c) {
+  const v = [...c.act, ...c.fc], mx = Math.max(...v), W = 400, H = 110, w = W / 20;
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Weekly demand, past 12 weeks and forecast next 8 weeks">` +
+    v.map((x, i) => { const h = x / mx * (H - 26); return `<rect x="${i * w + 1.5}" y="${H - 16 - h}" width="${w - 3}" height="${h}" rx="2" fill="${i < 12 ? "#b9c4d0" : "#3d4fd1"}"/>`; }).join("") +
+    `<text x="2" y="${H - 3}" font-size="10" fill="#5d6b7a">past 12 weeks</text><text x="${W - 2}" y="${H - 3}" font-size="10" fill="#5d6b7a" text-anchor="end">forecast, next 8 weeks</text></svg>`;
+}
+function lineSvg(c, r) {
+  const cum = t => c.fc.slice(0, t).reduce((a, b) => a + b, 0);
+  const base = [], fix = [];
+  for (let t = 0; t <= 8; t++) { const arr = t >= r.Lw ? c.ord : 0; base.push(c.hand - cum(t) + arr); fix.push(c.hand - cum(t) + arr + (t >= r.Lw ? r.qty : 0)); }
+  const lo = Math.min(0, ...base), hi = Math.max(...base, ...fix, r.rop), W = 400, H = 120, p = 8;
+  const X = t => p + t / 8 * (W - 2 * p - 20), Y = v => p + (hi - v) / (hi - lo || 1) * (H - 2 * p - 12);
+  const pl = (a, col, dash) => `<polyline fill="none" stroke="${col}" stroke-width="2.2" ${dash ? 'stroke-dasharray="5 4"' : ""} points="${a.map((v, t) => X(t) + "," + Y(v)).join(" ")}"/>`;
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Projected stock for the next 8 weeks">
+    <line x1="${p}" x2="${W - 20}" y1="${Y(0)}" y2="${Y(0)}" stroke="#8795a3"/><text x="${W - 18}" y="${Y(0) + 4}" font-size="10" fill="#5d6b7a">0</text>
+    <line x1="${p}" x2="${W - 20}" y1="${Y(r.rop)}" y2="${Y(r.rop)}" stroke="#d98a1c" stroke-dasharray="3 3"/><text x="${W - 18}" y="${Y(r.rop) + 4}" font-size="10" fill="#8a5608">ROP</text>
+    ${pl(base, "#d9363e", false)}${r.qty ? pl(fix, "#1f8f7e", true) : ""}
+    <text x="${p}" y="${H - 1}" font-size="10" fill="#5d6b7a">now</text><text x="${W - 20}" y="${H - 1}" font-size="10" fill="#5d6b7a" text-anchor="end">week 8</text></svg>`;
+}
+function detail() {
+  const x = res.find(y => y.c === sel), c = x.c, r = x.r;
+  const chg = Math.round((c.fc.reduce((a, b) => a + b, 0) / 8 / (c.act.reduce((a, b) => a + b, 0) / 12) - 1) * 100);
+  const cls = r.st === "Stockout risk" ? "r" : r.st === "Reorder" ? "o" : r.st === "Healthy" ? "g" : "";
+  const sl = {1.28: 90, 1.645: 95, 1.88: 97, 2.33: 99}[z];
+  const why = r.st === "Overstock"
+    ? `You hold ${r.pos} units (including orders in transit), about ${(r.pos / r.d).toFixed(0)} weeks of demand at ${Math.round(r.d)} units/week. Demand is ${chg >= 0 ? "up" : "down"} ${Math.abs(chg)}% against the last 12 weeks. About ${r.excess} units are surplus, worth ${money(r.excess * c.cost)} of cash. Stop reordering, and consider a markdown or a transfer to a store where it sells.`
+    : `Demand is forecast at ${Math.round(r.d)} units/week over the next ${r.Lw} weeks, ${chg >= 0 ? "up" : "down"} ${Math.abs(chg)}% against the last 12 weeks because of seasonality. The supplier takes ${c.L} weeks (give or take ${c.Lsd}), so you need ${Math.round(r.rop)} units on hand or on order to keep a ${sl}% service level. You have ${r.pos}.`;
+  $("detail").innerHTML = `<h2>${c.name}</h2><span class="pill ${PILL[r.st]}">${r.st}</span> <span class="sm">${c.cat}, cost $${c.cost}, price $${c.price}</span>
+    <div class="st"><div><span class="sm">On hand</span><b>${c.hand}</b></div><div><span class="sm">On order</span><b>${c.ord}</b></div><div><span class="sm">Safety stock</span><b>${Math.round(r.ss)}</b></div></div>
+    <div class="act ${cls}"><b>${action(c, r)}</b>${r.risk > 0 ? `<br><span class="sm">Margin at risk if nothing is done: ${money(r.risk)}</span>` : ""}</div>
+    <b>Weekly demand</b>${barsSvg(c)}
+    <b>Projected stock</b>
+    <div class="leg"><span style="--c:#d9363e">Without action</span>${r.qty ? '<span style="--c:#1f8f7e">With recommended order</span>' : ""}<span style="--c:#d98a1c">Reorder point</span></div>${lineSvg(c, r)}
+    <p class="sm">${why}</p>`;
+}
+$("chips").onclick = e => { const k = e.target.dataset.k; if (k) { flt = k; chips(); rows(); } };
+const pickRow = el => { const tr = el.closest("tr.row"); if (tr) { sel = data.find(c => c.name === tr.dataset.n); rows(); detail(); } };
+$("rows").onclick = e => pickRow(e.target);
+$("rows").onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pickRow(e.target); } };
+$("sl").onchange = e => { z = +e.target.value; run(); };
+run();
+</script>
+</body>
+</html>
